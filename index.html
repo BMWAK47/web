@@ -1,0 +1,264 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>線上測驗系統</title>
+    <style>
+        body { font-family: Arial, sans-serif; background-color: #f0f2f5; margin: 0; padding: 20px; color: #333; }
+        .container { max-width: 900px; margin: auto; background: white; padding: 20px; border-radius: 8px; box-shadow: 0 4px 6px rgba(0,0,0,0.1); }
+        .header { text-align: center; margin-bottom: 20px; }
+        .question-list { display: flex; flex-wrap: wrap; gap: 10px; margin-bottom: 20px; }
+        .question-btn { padding: 10px 15px; border: 1px solid #ccc; border-radius: 5px; cursor: pointer; background: #eee; text-decoration: none; color: #333; }
+        .question-btn.answered { background-color: #d4edda; border-color: #c3e6cb; }
+        .quiz-section { border: 1px solid #eee; padding: 20px; border-radius: 5px; }
+        .quiz-section h2 { margin-top: 0; }
+        .options div { margin: 10px 0; }
+        .options input { margin-right: 10px; }
+        .ranking-list { list-style: none; padding: 0; }
+        .ranking-list li { padding: 10px; border-bottom: 1px solid #eee; display: flex; justify-content: space-between; }
+        #submit-btn { padding: 10px 20px; background-color: #007bff; color: white; border: none; border-radius: 5px; cursor: pointer; }
+        #login-form { text-align: center; }
+        #login-form input { padding: 8px; margin-top: 10px; border-radius: 5px; border: 1px solid #ccc; }
+        #login-form button { padding: 8px 15px; border: none; background-color: #28a745; color: white; border-radius: 5px; cursor: pointer; }
+        .nav-buttons button { margin-right: 10px; padding: 8px 15px; border: none; background-color: #6c757d; color: white; border-radius: 5px; cursor: pointer; }
+    </style>
+</head>
+<body>
+
+    <div class="container">
+        <div class="header" id="welcome-section">
+            <h1>歡迎使用測驗系統！</h1>
+            <p>請輸入你的名稱以開始作答。</p>
+            <form id="login-form">
+                <input type="text" id="username-input" placeholder="你的名稱" required>
+                <button type="submit">進入測驗</button>
+            </form>
+        </div>
+
+        <div id="main-quiz-section" style="display: none;">
+            <div class="nav-buttons">
+                <button id="show-questions-btn">回到題目列表</button>
+                <button id="show-ranking-btn">查看排名</button>
+            </div>
+
+            <div id="questions-view">
+                <h2>題目列表</h2>
+                <div class="question-list" id="question-list-container"></div>
+            </div>
+
+            <div id="quiz-view" style="display: none;">
+                <h2 id="question-title"></h2>
+                <div class="options" id="options-container"></div>
+                <button id="submit-btn">提交答案</button>
+            </div>
+            
+            <div id="ranking-view" style="display: none;">
+                <h2>即時排名</h2>
+                <ul class="ranking-list" id="ranking-container"></ul>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        const WEB_APP_URL = "https://script.google.com/macros/s/AKfycbzGlNLkCcrYgMaBtAKW2AfB9-CBPjW0vGKoOx9xIlVErAYIIw9LX6ECbTPV504vTNMX/exec"; // 替換成你的 Apps Script 網頁應用程式網址
+
+        let questions = [];
+        let username = '';
+        let userResponses = {}; // 存放使用者作答的答案
+        let currentQuestion = null;
+        let answeredQuestions = {}; // 存放已作答的題目
+
+        const welcomeSection = document.getElementById('welcome-section');
+        const mainQuizSection = document.getElementById('main-quiz-section');
+        const loginForm = document.getElementById('login-form');
+        const usernameInput = document.getElementById('username-input');
+
+        const questionsView = document.getElementById('questions-view');
+        const quizView = document.getElementById('quiz-view');
+        const rankingView = document.getElementById('ranking-view');
+
+        const questionListContainer = document.getElementById('question-list-container');
+        const questionTitle = document.getElementById('question-title');
+        const optionsContainer = document.getElementById('options-container');
+        const submitBtn = document.getElementById('submit-btn');
+
+        const rankingContainer = document.getElementById('ranking-container');
+        const showQuestionsBtn = document.getElementById('show-questions-btn');
+        const showRankingBtn = document.getElementById('show-ranking-btn');
+
+        loginForm.addEventListener('submit', function(e) {
+            e.preventDefault();
+            username = usernameInput.value;
+            if (username) {
+                welcomeSection.style.display = 'none';
+                mainQuizSection.style.display = 'block';
+                loadQuestions();
+            }
+        });
+        
+        showQuestionsBtn.addEventListener('click', showQuestionsList);
+        showRankingBtn.addEventListener('click', showRanking);
+        submitBtn.addEventListener('click', submitAnswer);
+
+        function showQuestionsList() {
+            quizView.style.display = 'none';
+            rankingView.style.display = 'none';
+            questionsView.style.display = 'block';
+            renderQuestionList();
+        }
+
+        function showRanking() {
+            questionsView.style.display = 'none';
+            quizView.style.display = 'none';
+            rankingView.style.display = 'block';
+            fetchRanking();
+        }
+
+        function fetchAPI(action, params = {}) {
+            const formData = new FormData();
+            formData.append('action', action);
+            for (const key in params) {
+                formData.append(key, params[key]);
+            }
+            return fetch(WEB_APP_URL, {
+                method: 'POST',
+                body: formData
+            }).then(res => res.json());
+        }
+
+        function loadQuestions() {
+            fetchAPI('getQuestions').then(data => {
+                if (data.error) {
+                    alert('載入題目失敗: ' + data.error);
+                    return;
+                }
+                questions = data;
+                renderQuestionList();
+            });
+        }
+
+        function renderQuestionList() {
+            questionListContainer.innerHTML = '';
+            questions.forEach(q => {
+                const btn = document.createElement('a');
+                btn.href = '#';
+                btn.textContent = `題目 ${q['題號']}`;
+                btn.className = 'question-btn';
+                if (answeredQuestions[q['題號']]) {
+                    btn.classList.add('answered');
+                }
+                btn.onclick = () => showQuestion(q);
+                questionListContainer.appendChild(btn);
+            });
+        }
+
+        function showQuestion(question) {
+            questionsView.style.display = 'none';
+            rankingView.style.display = 'none';
+            quizView.style.display = 'block';
+
+            currentQuestion = question;
+            questionTitle.textContent = `第 ${question['題號']} 題: ${question['題目']}`;
+            optionsContainer.innerHTML = '';
+
+            // 渲染選項
+            for (let i = 1; i <= 4; i++) {
+                const optionKey = `選項${i}`;
+                if (question[optionKey]) {
+                    const optionDiv = document.createElement('div');
+                    const input = document.createElement('input');
+                    const label = document.createElement('label');
+
+                    if (question['題型'] === '單選') {
+                        input.type = 'radio';
+                        input.name = 'answer';
+                        input.value = String.fromCharCode(64 + i); // A, B, C, D
+                    } else if (question['題型'] === '多選') {
+                        input.type = 'checkbox';
+                        input.name = 'answer';
+                        input.value = String.fromCharCode(64 + i);
+                    }
+                    
+                    label.textContent = `${String.fromCharCode(64 + i)}. ${question[optionKey]}`;
+                    label.prepend(input);
+                    optionDiv.appendChild(label);
+                    optionsContainer.appendChild(optionDiv);
+                }
+            }
+            
+            // 如果已作答，則禁用提交按鈕
+            if (answeredQuestions[question['題號']]) {
+                submitBtn.disabled = true;
+                submitBtn.textContent = '已作答';
+            } else {
+                submitBtn.disabled = false;
+                submitBtn.textContent = '提交答案';
+            }
+        }
+
+        function submitAnswer() {
+            if (!currentQuestion) return;
+
+            let answer = '';
+            if (currentQuestion['題型'] === '單選') {
+                const checkedRadio = optionsContainer.querySelector('input[name="answer"]:checked');
+                if (checkedRadio) {
+                    answer = checkedRadio.value;
+                }
+            } else if (currentQuestion['題型'] === '多選') {
+                const checkedBoxes = optionsContainer.querySelectorAll('input[name="answer"]:checked');
+                const answers = Array.from(checkedBoxes).map(box => box.value);
+                answer = answers.join(',');
+            }
+
+            if (!answer) {
+                alert('請選擇一個答案！');
+                return;
+            }
+
+            // 這裡將使用者作答儲存在前端，方便一次性提交
+            userResponses[currentQuestion['題號']] = {
+                questionId: currentQuestion['題號'],
+                answer: answer
+            };
+            
+            answeredQuestions[currentQuestion['題號']] = true;
+            submitBtn.disabled = true;
+            submitBtn.textContent = '已作答';
+            alert('答案已儲存！');
+
+            // 檢查是否所有題目都已作答，如果是則提交
+            if (Object.keys(answeredQuestions).length === questions.length) {
+                const responsesArray = Object.values(userResponses);
+                fetchAPI('submitResponse', { name: username, responses: JSON.stringify(responsesArray) })
+                .then(result => {
+                    if (result.success) {
+                        alert(`所有題目都已作答，你的總分為: ${result.score}`);
+                    } else {
+                        alert('提交答案失敗: ' + result.error);
+                    }
+                });
+            }
+            
+            // 更新題目列表的狀態
+            renderQuestionList();
+        }
+
+        function fetchRanking() {
+            fetchAPI('getRanking').then(data => {
+                if (data.error) {
+                    alert('載入排名失敗: ' + data.error);
+                    return;
+                }
+                rankingContainer.innerHTML = '';
+                data.forEach((rank, index) => {
+                    const li = document.createElement('li');
+                    li.textContent = `第 ${index + 1} 名: ${rank.name} - ${rank.score} 分`;
+                    rankingContainer.appendChild(li);
+                });
+            });
+        }
+    </script>
+</body>
+</html>
